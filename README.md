@@ -12,11 +12,10 @@ Contenido
 	* [06_kallisto](#06_kallisto)
 	* [07_RSEM](#07_RSEM)
 	* [08_stringtie](#08_stringtie)
-	* [09_deseq2](#09_deseq2)
-		* [kallisto](#kallisto)
-		* [rsem](#rsem)
-		* [stringtie](#stringtie)
-	* [10_trinity](#10_trinity)
+	* 09_deseq2
+		* [kallisto](#09_deseq2_kallisto)
+		* [rsem](#09_deseq2_rsem)
+		* [stringtie](#09_deseq2_stringtie)
 * [Referencias](#referencias)
 
 # Datos recibidos
@@ -90,15 +89,20 @@ hisat2-build --ss 00_genome/Solanum_lycopersicum.hisat2.ss --exon 00_genome/Sola
 ```
 
 `01_raw`
+
 --------
-`02_QC`
--------
 Las lecturas de secuenciación fueron depositadas en la carpeta `01_raw` para su posterior acceso, a lo largo del protocolo se crearon links simbólicos en las distintas carpetas de trabajo para reducir el espacio empleado
 
 ```bash
 # Ubicación de las lecturas en la carpeta 01_raw
 mv RT1SL1SS01_FILT_R1.fastq.gz  RT1SL1SS02_FILT_R1.fastq.gz  RT1SL1SS03_FILT_R1.fastq.gz  RT1SL1SS04_FILT_R1.fastq.gz  RT1SL1SS05_FILT_R1.fastq.gz  RT1SL1SS06_FILT_R1.fastq.gz 01_raw
+```
 
+`02_QC`
+-------
+Las lecturas de secuenciación fueron examinadas con fastQC para determinar si la calidad de los datos recibidos era adecuada para el análisis de expresión diferencial
+
+```bash
 # Examinación de los scores de calidad de las lecturas filtradas
 cd 02_QC
 ln -s $work_dir/01_raw/*.gz .
@@ -272,7 +276,7 @@ prepDE.py --input . --length 150 --pattern RT1SL1SS0
 
 A partir de las matrices generadas en los pasos `06_kallisto`, `07_RSEM` y `08_stringtie` se procedio al análisis de expresión diferencial, para lo cual se usó deseq2 y tximport
 
-`09_deseq2/kallisto`
+`09_deseq2_kallisto`
 --------------------
 
 ```bash
@@ -300,50 +304,7 @@ grep -wFf id_list ../../../00_genome/Solanum_lycopersicum.gff | grep Parent=gene
 rm id_list
 ```
 
-Una vez teniendo los archivos de kallisto y el archivo de metadatos, se procedió a examinar las muestras con DESeq2
-
-```R
-library(tximport)
-library(DESeq2)
-library("pheatmap")
-library("RColorBrewer")
-samples                          <- read.csv("metadata.tsv",header=TRUE,sep="\t")
-files                            <- file.path(".", samples$sample,"abundance.tsv")
-names(files)                     <- samples$sample
-tx2gene                          <- read.csv("tx2gene.tsv",sep="\t",header=TRUE)
-txi_kallisto                     <- tximport(files, type = "kallisto", tx2gene=tx2gene)
-sampleNames                      <- c("RT1SL1SS01","RT1SL1SS02","RT1SL1SS03","RT1SL1SS04","RT1SL1SS05","RT1SL1SS06")
-sampleGroup                      <- c("control","control","control","treatment","treatment","treatment")
-sampleTable                      <- data.frame(sample=sampleNames, dex=sampleGroup)
-rownames(sampleTable)            <- colnames(txi_kallisto$counts)
-ddsTxi                           <- DESeqDataSetFromTximport(txi_kallisto,sampleTable,design=~dex)
-dds                              <- DESeq(ddsTxi)
-nsub                             <- nrow(dds)
-rld                              <- rlog(dds,blind=TRUE)
-vsd                              <- vst(dds,blind=TRUE)
-sample_vsd_dists                 <- dist(t(assay(vsd)))
-sample_vsd_dist_matrix           <- as.matrix( sample_vsd_dists )
-rownames(sample_vsd_dist_matrix) <- paste( vsd$dex, colnames(vsd), sep = "-" )
-colnames(sample_vsd_dist_matrix) <- NULL
-vsd_colors                       <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
-sample_rld_dists                 <- dist(t(assay(rld)))
-sample_rld_dist_matrix           <- as.matrix( sample_rld_dists )
-rownames(sample_rld_dist_matrix) <- paste( rld$dex, colnames(rld), sep = "-" )
-colnames(sample_rld_dist_matrix) <- NULL
-rld_colors                       <- colorRampPalette( rev(brewer.pal(9, "Oranges")) )(255)
-png("vsd_heatmap.png", width=1000,height=1000)
-pheatmap(sample_vsd_dist_matrix,clustering_distance_rows=sample_vsd_dists,clustering_distance_cols=sample_vsd_dists,col=vsd_colors)
-dev.off()
-png("rld_heatmap.png", width=1000,height=1000)
-pheatmap(sample_rld_dist_matrix,clustering_distance_rows=sample_rld_dists,clustering_distance_cols=sample_rld_dists,col=rld_colors)
-dev.off()
-png("vsd_pca.png", width=1000,height=1000)
-plotPCA(vsd, intgroup = "dex")
-dev.off()
-png("rld_pca.png", width=1000,height=1000)
-plotPCA(rld, intgroup = "dex")
-dev.off()
-```
+Una vez teniendo los archivos de kallisto y el archivo de metadatos, se procedió a examinar las muestras con DESeq2. El código de R empleado en este paso se encuentra en el archivo [kallisto.R](09_deseq2/run_01/kallisto/kallisto.R)
 
 Antes de proceder al análisis de expresión diferencial, se revisaron un par de pruebas para determinar si las muestras no mostraban diferencias significativas entre replicas, ya que de lo contrario, la estimación de genes diferencialmente expresados sería espurea.
 
@@ -367,7 +328,14 @@ En la figura se observa que no hay una separación franca entre las muestras con
 
 ![heatmap](09_deseq2/run_01/kallisto/vsd_pca.png)
 
-`09_deseq2/rsem`
+Bajo solicitud del usuario, se procedió a determinar cuales eran los genes expresados diferencialmente en las dos condiciones. Para ello se seleccionaron los genes cuyo log fold change fuera superior a 1 y su p-value ajustado fuera menor a 0.05.
+
+A continuación se muestra un dendrograma y heatmap de los genes diferencialmente expresados.
+Los valores de expresión de dichos genes están accesibles en el archivo [differentially_expressed_genes.kallisto.tsv](09_deseq2/run_01/kallisto/differentially_expressed_genes.kallisto.tsv)
+
+![de_heatmap](09_deseq2/run_01/kallisto/de_heatmap.png)
+
+`09_deseq2_rsem`
 ----------------
 
 ```bash
@@ -387,47 +355,7 @@ RT1SL1SS05	treatment	Solanum lycopersicum
 RT1SL1SS06	treatment	Solanum lycopersicum
 ```
 
-```R
-library("tximport")
-library("DESeq2")
-library("pheatmap")
-library("RColorBrewer")
-samples                             <- read.csv("metadata.tsv",header=TRUE,sep="\t")
-files                               <- file.path(".",paste0(samples$sample,".genes.results"))
-names(files)                        <- samples$sample
-txi_rsem                            <- tximport(files,type="rsem",txIn=FALSE,txOut =FALSE)
-txi_rsem$length[txi_rsem$length==0] <- 1
-sampleNames                         <- c("RT1SL1SS01","RT1SL1SS02","RT1SL1SS03","RT1SL1SS04","RT1SL1SS05","RT1SL1SS06")
-sampleGroup                         <- c("control","control","control","treatment","treatment","treatment")
-sampleTable                         <- data.frame(sample=sampleNames, dex=sampleGroup)
-rownames(sampleTable)               <- colnames(txi_rsem$counts)
-ddsTxi                              <- DESeqDataSetFromTximport(txi_rsem,sampleTable,design=~dex)
-dds                                 <- DESeq(ddsTxi)
-rld                                 <- rlog(dds,blind=TRUE)
-vsd                                 <- vst(dds,blind=TRUE)
-sample_vsd_dists                    <- dist(t(assay(vsd)))
-sample_vsd_dist_matrix              <- as.matrix( sample_vsd_dists )
-rownames(sample_vsd_dist_matrix)    <- paste( vsd$dex, colnames(vsd), sep = "-" )
-colnames(sample_vsd_dist_matrix)    <- NULL
-vsd_colors                          <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
-sample_rld_dists                    <- dist(t(assay(rld)))
-sample_rld_dist_matrix              <- as.matrix( sample_rld_dists )
-rownames(sample_rld_dist_matrix)    <- paste( rld$dex, colnames(rld), sep = "-" )
-colnames(sample_rld_dist_matrix)    <- NULL
-rld_colors                          <- colorRampPalette( rev(brewer.pal(9, "Oranges")) )(255)
-png("vsd_heatmap.png", width=1000,height=1000)
-pheatmap(sample_vsd_dist_matrix,clustering_distance_rows=sample_vsd_dists,clustering_distance_cols=sample_vsd_dists,col=vsd_colors)
-dev.off()
-png("rld_heatmap.png", width=1000,height=1000)
-pheatmap(sample_rld_dist_matrix,clustering_distance_rows=sample_rld_dists,clustering_distance_cols=sample_rld_dists,col=rld_colors)
-dev.off()
-png("vsd_pca.png", width=1000,height=1000)
-plotPCA(vsd, intgroup = "dex")
-dev.off()
-png("rld_pca.png", width=1000,height=1000)
-plotPCA(rld, intgroup = "dex")
-dev.off()
-```
+Una vez teniendo los archivos de rsem y el archivo de metadatos, se procedió a examinar las muestras con DESeq2. El código de R empleado en este paso se encuentra en el archivo [rsem.R](09_deseq2/run_01/rsem/rsem.R)
 
 Al igual que con las cuentas obtenidas con kallisto, se aplicaron las transformaciones RLD y VSD, asimismo, se construyeron los dendrogramas, mapas de calor y PCAs.
 
@@ -442,7 +370,14 @@ Al igual que con las cuentas obtenidas con kallisto, se aplicaron las transforma
 
 En las figuras se observa que no hay una separación franca entre las muestras control versus las muestras con tratamiento, esto se hace manifiesto al examinar un diagrama de componentes principales, en donde se espera que haya agrupación entre las replicas de una misma condición, no obstante se observa que las replicas correspondientes a la muestra tratada, presentan dispersiones considerables
 
-`09_deseq2/stringtie`
+Bajo solicitud del usuario, se procedió a determinar cuales eran los genes expresados diferencialmente en las dos condiciones. Para ello se seleccionaron los genes cuyo log fold change fuera superior a 1 y su p-value ajustado fuera menor a 0.05.
+
+A continuación se muestra un dendrograma y heatmap de los genes diferencialmente expresados.
+Los valores de expresión de dichos genes están accesibles en el archivo [differentially_expressed_genes.rsem.tsv](09_deseq2/run_01/rsem/differentially_expressed_genes.rsem.tsv)
+
+![de_heatmap](09_deseq2/run_01/rsem/de_heatmap.png)
+
+`09_deseq2_stringtie`
 ---------------------
 
 ```bash
@@ -462,39 +397,7 @@ RT1SL1SS05	treatment	Solanum lycopersicum
 RT1SL1SS06	treatment	Solanum lycopersicum
 ```
 
-```R
-library("DESeq2")
-library("pheatmap")
-library("RColorBrewer")
-countData                        <- as.matrix(read.csv("gene_count_matrix.csv", row.names="gene_id"))
-colData                          <- read.csv("metadata.tsv", sep="\t", row.names=1)
-countData                        <- countData[, rownames(colData)]
-dds                              <- DESeqDataSetFromMatrix(countData=countData,colData=colData,design=~dex)
-rld                              <- rlog(dds, blind = FALSE)
-vsd                              <- vst(dds, blind=TRUE)
-sample_vsd_dists                 <- dist(t(assay(vsd)))
-sample_vsd_dist_matrix           <- as.matrix( sample_vsd_dists )
-rownames(sample_vsd_dist_matrix) <- paste( vsd$dex, colnames(vsd), sep = "-" )
-colnames(sample_vsd_dist_matrix) <- NULL
-vsd_colors                       <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
-sample_rld_dists                 <- dist(t(assay(rld)))
-sample_rld_dist_matrix           <- as.matrix( sample_rld_dists )
-rownames(sample_rld_dist_matrix) <- paste( rld$dex, colnames(rld), sep = "-" )
-colnames(sample_rld_dist_matrix) <- NULL
-rld_colors                       <- colorRampPalette( rev(brewer.pal(9, "Oranges")) )(255)
-png("vsd_heatmap.png", width=1000,height=1000)
-pheatmap(sample_vsd_dist_matrix,clustering_distance_rows=sample_vsd_dists,clustering_distance_cols=sample_vsd_dists,col=vsd_colors)
-dev.off()
-png("rld_heatmap.png", width=1000,height=1000)
-pheatmap(sample_rld_dist_matrix,clustering_distance_rows=sample_rld_dists,clustering_distance_cols=sample_rld_dists,col=rld_colors)
-dev.off()
-png("vsd_pca.png", width=1000,height=1000)
-plotPCA(vsd, intgroup = "dex")
-dev.off()
-png("rld_pca.png", width=1000,height=1000)
-plotPCA(rld, intgroup = "dex")
-dev.off()
-```
+Una vez teniendo los archivos de stringtie y el archivo de metadatos, se procedió a examinar las muestras con DESeq2. El código de R empleado en este paso se encuentra en el archivo [stringtie.R](09_deseq2/run_01/stringtie/stringtie.R)
 
 Al igual que con las cuentas obtenidas con kallisto, se aplicaron las transformaciones RLD y VSD, asimismo, se construyeron los dendrogramas, mapas de calor y PCAs.
 
@@ -509,7 +412,12 @@ Al igual que con las cuentas obtenidas con kallisto, se aplicaron las transforma
 
 En las figuras se observa que no hay una separación franca entre las muestras control versus las muestras con tratamiento, esto se hace manifiesto al examinar un diagrama de componentes principales, en donde se espera que haya agrupación entre las replicas de una misma condición, no obstante se observa que las replicas correspondientes a la muestra tratada, presentan dispersiones considerables
 
-El análisis de expresión diferencial quedó hasta esta etapa considerando que la dispersión observada en las replicas de la muestra tratada era considerablemente alta y la búsqueda de genes diferencialmente expresados puede ser susceptible a una tasa elevada de falsos positivos.
+Bajo solicitud del usuario, se procedió a determinar cuales eran los genes expresados diferencialmente en las dos condiciones. Para ello se seleccionaron los genes cuyo log fold change fuera superior a 1 y su p-value ajustado fuera menor a 0.05.
+
+A continuación se muestra un dendrograma y heatmap de los genes diferencialmente expresados.
+Los valores de expresión de dichos genes están accesibles en el archivo [differentially_expressed_genes.stringtie.tsv](09_deseq2/run_01/stringtie/differentially_expressed_genes.stringtie.tsv)
+
+![de_heatmap](09_deseq2/run_01/stringtie/de_heatmap.png)
 
 
 # Referencias

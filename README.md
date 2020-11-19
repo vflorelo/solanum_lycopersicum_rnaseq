@@ -89,8 +89,8 @@ hisat2-build --ss 00_genome/Solanum_lycopersicum.hisat2.ss --exon 00_genome/Sola
 ```
 
 `01_raw`
-
 --------
+
 Las lecturas de secuenciación fueron depositadas en la carpeta `01_raw` para su posterior acceso, a lo largo del protocolo se crearon links simbólicos en las distintas carpetas de trabajo para reducir el espacio empleado
 
 ```bash
@@ -100,6 +100,7 @@ mv RT1SL1SS01_FILT_R1.fastq.gz  RT1SL1SS02_FILT_R1.fastq.gz  RT1SL1SS03_FILT_R1.
 
 `02_QC`
 -------
+
 Las lecturas de secuenciación fueron examinadas con fastQC para determinar si la calidad de los datos recibidos era adecuada para el análisis de expresión diferencial
 
 ```bash
@@ -121,6 +122,7 @@ Al termino de la corrida de fastQC, se obtuvieron los siguientes reportes en for
 
 `03_ribosomal_filtering`
 ------------------------
+
 Con la finalidad de eliminar lecturas que potencialmente corresponden a rRNAs, se empleó el programa SortMeRNA y la base de datos SILVA usando las secuencias de rRNAs eucarióticos 18S y 16S
 
 ```bash
@@ -160,6 +162,7 @@ Las lecturas útiles fueron empleadas para la estimación de la abundancia de lo
 
 `04_STAR`
 ---------
+
 Las lecturas útiles obtenidas en el paso anterior fueron alineadas al transcriptoma de referencia usando STAR
 
 ```bash
@@ -185,6 +188,7 @@ Al termino de la corrida de STAR se obtuvieron alineamientos de lecturas en form
 
 `05_hisat2`
 -----------
+
 Las lecturas útiles obtenidas en el paso `03_ribosomal_filtering` fueron alineadas al transcriptoma de referencia usando hisat2
 ```bash
 cd ${work_dir}/05_hisat2
